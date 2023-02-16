@@ -1,0 +1,54 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Oct 27 13:52:44 2022
+
+@author: ryanv
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+#Energy of the photon (eV)
+Ephoton1 = 50000
+Ephoton2 = 75000
+Ephoton3 = 100000
+#Energy of the host bandgap (eV)
+Ebandgap = 1.55
+#Quantum dot Lifetime (ns)
+QDLT = 10
+#Host Charge Carrier Lifetime (ns)
+HostLT = 30
+#Calculate the volume of an octehedral Quantum Dot of diameter 3 nm
+VQD = (np.sqrt([2])/3)*(0.0015*0.0015*0.0015)
+#innitialize a Diffusion length
+DLength = 0
+#Innitialize Vtotal
+VTotal = 0
+
+plt.rcParams["figure.figsize"] = [7.50, 5]
+plt.rcParams["figure.autolayout"] = True
+
+def QDLoading1(DLength):
+   #Calculate number of QDs needed per given diffusion length
+   NumberQDs = (Ephoton1/(2.5*Ebandgap))*(QDLT/HostLT)*(1/DLength)
+   return NumberQDs*(VQD/(DLength*DLength*DLength))*100
+def QDLoading2(DLength):
+   #Calculate number of QDs needed per given diffusion length
+   NumberQDs = (Ephoton2/(2.5*Ebandgap))*(QDLT/HostLT)*(1/DLength)
+   return NumberQDs*(VQD/(DLength*DLength*DLength))*100
+def QDLoading3(DLength):
+   #Calculate number of QDs needed per given diffusion length
+   NumberQDs = (Ephoton3/(2.5*Ebandgap))*(QDLT/HostLT)*(1/DLength)
+   return NumberQDs*(VQD/(DLength*DLength*DLength))*100
+DLength = np.linspace(0.5, 1, 1000)
+
+plt.plot(DLength, QDLoading1(DLength), color='blue', linewidth = 0.8)
+plt.plot(DLength, QDLoading2(DLength), color='green', linewidth = 0.8)
+plt.plot(DLength, QDLoading3(DLength), color='red', linewidth = 0.8)
+plt.xlabel('Grain Size (um)')
+plt.ylabel('Optimal QD Loading %')
+plt.title('Optimal QD Loading per Grain Size for Various X-Ray Energies')
+plt.legend(('50 keV X-Ray', '75 keV X-Ray', '100 keV X-Ray'),
+           loc='upper right', shadow=True)
+plt.grid(True)
+plt.show()
