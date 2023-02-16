@@ -1,0 +1,238 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Oct 13 13:37:41 2022
+
+@author: ryanv, lisa
+Ways to improve this code:
+    - Recalculate photon trajectory after total internal reflection and
+    check to see if it passes through a neighboring wall. (Easy)
+    - Make a loop to test fresnels' at every instance of total internal
+    reflection. (Easy)
+    - Sample a distribution of particle morphologies and replace our
+    cubic assumption with these. (Hard)
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import pypolar.fresnel as fresnel
+import math
+import random
+
+
+# Refractive indices of the media (n1) and of the crystals (n2).
+n_i = 1.0
+m =  2.3
+mu = n_i / m
+
+# Perovskite Grains in polymer loading percent by volume
+LP = 10
+
+# Perovskite Grain Size (um)
+GS = 1
+
+# Average pathlength between perovskite grains (um)
+APL = (100-LP)/(LP/GS) - GS
+
+# Distance we want to measure the photons traveling in the material
+travel_distance = 500
+
+# Make an equation that tracks the coordinate (c) and direction (d) a photon travels 
+# after each event. Initialize the values.
+
+ctracker = np.array([0,0,0])*(APL)
+
+d1 = 0
+d2 = 0
+d3 = -1
+dmag = math.sqrt(d1*d1+d2*d2+d3*d3)
+dx = d1 / dmag
+dy = d2 / dmag
+dz = d3 / dmag
+d = np.array([dx, dy, dz])
+
+
+# Monte Carlo Method
+# Number of Simulations
+MC_sims = 10
+
+#photon_interactions = APL
+
+# Decide how many photon interactions to allow in each sim
+photon_interactions = int(travel_distance // APL)
+photon_tracker = np.full(shape=(photon_interactions, MC_sims), fill_value=0.0)
+
+#Track the direction the photon is at with respect to the origin
+angle_tracker = np.full(shape=(photon_interactions, MC_sims), fill_value=0.0)
+
+total_distance_tracker = np.full(shape=(photon_interactions, MC_sims), fill_value=0.0)
+
+def generate_Random_Normal():
+    
+    """
+    Cube Orientation. Generate a random normal vector (n = ai bj ck) that 
+    is within 45 degrees of the incident photon vector to simulate the interaction
+    on the cubes surface.
+    """
+
+    # Find an orthoganal vector (v) to the incident photon's direction
+    a = 1
+    b = 1
+    c = (-d[0]*a - d[1]*b) / d[2]
+
+    vmag = math.sqrt(a*a + b*b + c*c)
+
+    vx = a / vmag
+    vy = b / vmag
+    vz = c / vmag
+
+    v = np.array([vx,vy,vz])
+
+    # Find a second orthoganal vector (v) to the incident photon's direction
+    u = np.cross(d,v)
+
+    # Using Rodrigues' formula, rotate the photon direction vector around the
+    # first orthoganol vector (v) by a random angle between (-90,90) to produce the
+    # first rotation on the normal vector.
+    theta1 = random.Random().uniform(-np.pi/2, +np.pi/2)
+    n1 = d*np.cos(theta1) + np.cross(v,d)*np.sin(theta1) + v*(np.dot(v,d))*(1-np.cos(theta1))
+
+    # Using Rodrigues' formula, rotate the photon direction vector around the
+    # second orthoganol vector (u) by a random angle between (-90,90) to produce the
+    # second rotation on the normal vector.
+    theta2 = random.Random().uniform(-np.pi/2, +np.pi/2)
+    n2 = n1*np.cos(theta2) + np.cross(u,n1)*np.sin(theta2) + u*(np.dot(u,n1))*(1-np.cos(theta2))
+    #print("theta2=", 180*theta2/np.pi)
+
+    # Revirse the direction of the randomized vector such that the surface normal
+    # is point at the incident photon. Also calculate the mag.
+    nmag = math.sqrt(n2[0]*n2[0]+n2[1]*n2[1]+n2[2]*n2[2])
+    nx = n2[0] / nmag
+    ny = n2[1] / nmag
+    nz = n2[2] / nmag
+    n = -np.array([nx,ny,nz])
+    
+    return (n, nmag)
+
+for j in range(0, MC_sims):
+    ctracker = np.array([0,0,0])*(APL)
+    
+    for i in range(0, photon_interactions):
+        #Add new distance the photon has traveled to the coordinate tracker
+        ctracker += d*APL
+        
+        #call generate_Random_Normal() function to generate your surface norm and norm magnitude
+        n, nmag = generate_Random_Normal()
+
+        #Calculate the angle between the normal and incident vectors...
+        theta_i = 180 - 180*np.arccos( np.dot(d,n) / dmag*nmag) / np.pi
+
+        #Calculate the probability of the photon passing through the grain boundary
+        #based on Fresnel's equations.
+        fresR1 = fresnel.R_unpolarized(m, theta_i, n_i, deg=True)
+        fresT1 = 1 - fresR1
+
+        # Based on the probability, test whether the photon passes through or not.
+        # Then decide what happens to it.
+        fresTestProb = random.Random().uniform(0, 1)
+
+        # Calculate the new refracted angle with respect to the norm (from Snells')
+        theta_j = 180*np.arcsin(mu*np.sin(np.pi*theta_i / 180)) / np.pi
+
+        # Calculate the crit angle based on Snells'
+        theta_c = 180*np.arcsin((mu)) / np.pi
+
+        #Calculate the probability of the photon passing through the grain boundary
+        # of the second surface based on Fresnel's equations.
+        fresR2 = fresnel.R_unpolarized(n_i, theta_j, m, deg=True)
+        fresT2 = 1 - fresR2
+
+        # Based on the probability, test whether the photon passes through 
+        # the second surface or not.
+        fresTestProb2 = random.Random().uniform(0, 1)
+
+        
+        # If then statements controlling all 4 possible cases.
+        if fresTestProb < fresR1:
+            #Reflection at first surface
+            d = d - 2*np.dot(d, n)*n
+            
+        elif fresTestProb > fresR1 and fresTestProb2 < fresR2:
+            #Transmission at first surface. Reflection at second. 
+            #Reflection Loop.
+            k=0
+            while fresTestProb2 < fresR2 or k < 100:
+                k +=1
+                d = -d
+                fresTestProb2 = random.Random().uniform(0, 1)
+                
+
+        elif fresTestProb > fresR1 and fresTestProb2 > fresR2:
+            #Transmission at first surface. Transmission at second surface.
+            #Photon escapes unperturbed.
+            d = d
+        
+        distance_from_origin = np.sqrt(ctracker[0]*ctracker[0]+ctracker[1]*ctracker[1]+ctracker[2]*ctracker[2])
+        angle_from_original_trajectory = 180*np.arccos([np.dot([0,0,-1],ctracker) / ((np.sqrt(0*0+0*0+1*1)*np.sqrt(ctracker[0]*ctracker[0]+ctracker[1]*ctracker[1]+ctracker[2]*ctracker[2])))]) / np.pi
+        photon_tracker[i,j] = distance_from_origin    
+        angle_tracker[i,j] = angle_from_original_trajectory
+        total_distance_tracker[i,j] = i*APL
+        
+        
+        i += 1
+    j += 1
+
+
+
+
+
+
+
+
+photon_final_locations = photon_tracker[photon_interactions - 1, :]
+
+#Average all the angles in each column in the array
+avg_angles = angle_tracker.mean(axis=0)
+
+"""
+#Generate a bar graph describing Vector Angle vs Vector Distance from Origin
+xticks = np.arange(start=0, stop=181, step=20)
+flattened_angle_tracker = angle_tracker.flatten()
+flattened_photon_tracker = photon_tracker.flatten()
+plt.bar(flattened_photon_tracker,flattened_angle_tracker, align='center', alpha=0.5)
+plt.xticks(xticks)
+plt.xlabel('Angle from original direction')
+plt.ylabel('Distance Traveled')
+plt.title('Light Blooming')
+plt.show()
+"""
+
+
+"""
+# Plot a line graph describing Average Vector Angle vs Vector Distance from Origin
+plt.plot(total_distance_tracker,avg_angles)
+plt.xlabel('Vector Distance From Origin (um)')
+plt.ylabel('Average Angle from Original Trajectory (degrees)')
+plt.title('Blooming vs Distance')
+plt.show() 
+"""
+
+"""
+# Plot a line graph describing Average Vector Distance from the intended Photon Travel Axis
+# Still working on it
+plt.plot(total_distance_tracker,avg_angles)
+plt.xlabel('Vector Distance From Origin (um)')
+plt.ylabel('Average Angle from Original Trajectory (degrees)')
+plt.title('Blooming vs Distance')
+plt.show() 
+"""
+
+# Plot a line graph describing the paths taken by photons in the polymer matrix
+plt.plot(total_distance_tracker,photon_tracker)
+plt.xlabel('Total Path-Length Distance Traveled (um)')
+plt.ylabel('Vector Distance From Origin (um)')
+plt.title('Photon Path in Perovskite/Polymer Composite Monte Carlo Simulation')
+plt.show()
+
+
+
+print("Average distance photon traveled from origin by end of sim: ", np.average(photon_final_locations))
